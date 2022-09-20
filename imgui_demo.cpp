@@ -5934,6 +5934,87 @@ static void ShowDemoWindowInputs()
                 }
                 ImGui::TreePop();
             }
+
+            // Demonstrate Shortcut Routing.
+            // The general flow is:
+            // - Code interested in a chord (e.g. "Ctrl+A") declares their intent.
+            // - Multiple locations may be interested in same chord! Routing helps find a winner.
+            // - Every frame, we resolve all claims and assign one owner if the modifiers are matching.
+            // - The lower-level function is 'bool SetShortcutRouting()', returns true when caller got the route.
+            // - Most of the times, SetShortcutRouting() is not called directly. User mostly calls Shortcut() with routing flags.
+            // - If you call Shortcut() WITHOUT any routing option, it uses ImGuiInputFlags_RouteFocused.
+            // TL;DR: Most uses will simply be:
+            // - Shortcut(ImGuiMod_Ctrl | ImGuiKey_A); // Use ImGuiInputFlags_RouteFocused policy.
+            if (ImGui::TreeNode("Shortcut Routing basics"))
+            {
+                // Demonstrate using Shortcut() with ImGuiInputFlags_RouteFocused
+                struct Funcs
+                {
+                    static void PrintRoutingAndTestShortcut(ImGuiKeyChord key_chord, ImGuiID id, ImGuiInputFlags flags)
+                    {
+                        ImGui::Text("WindowFocused: %d, Routing: %d, Result: %s",
+                            ImGui::IsWindowFocused(),
+                            ImGui::TestShortcutRouting(key_chord, id),
+                            ImGui::Shortcut(key_chord, id, flags) ? "PRESSED" : "...");
+                    }
+                };
+
+                const float line_height = ImGui::GetTextLineHeightWithSpacing();
+                const ImGuiKeyChord key_chord = ImGuiMod_Ctrl | ImGuiKey_A;
+                static ImGuiInputFlags repeat_flags = ImGuiInputFlags_Repeat;
+                static ImGuiInputFlags routing_flags = ImGuiInputFlags_RouteFocused;
+                ImGui::CheckboxFlags("ImGuiInputFlags_Repeat", &repeat_flags, ImGuiInputFlags_Repeat);
+                ImGui::RadioButton("ImGuiInputFlags_RouteFocused", &routing_flags, ImGuiInputFlags_RouteFocused); // Default
+                ImGui::RadioButton("ImGuiInputFlags_RouteAlways", &routing_flags, ImGuiInputFlags_RouteAlways);
+                ImGui::RadioButton("ImGuiInputFlags_RouteGlobal", &routing_flags, ImGuiInputFlags_RouteGlobal);
+                ImGui::RadioButton("ImGuiInputFlags_RouteGlobalHigh", &routing_flags, ImGuiInputFlags_RouteGlobalHigh);
+                ImGui::RadioButton("ImGuiInputFlags_RouteGlobalLow", &routing_flags, ImGuiInputFlags_RouteGlobalLow);
+                const ImGuiInputFlags input_flags = repeat_flags | routing_flags;
+
+                ImGui::BeginChild("WindowA", ImVec2(-FLT_MIN, line_height * 18), true);
+                ImGui::Text("Press CTRL+A and see who receives it!");
+                ImGui::Separator();
+
+                // 1: Window polling for CTRL+A
+                ImGui::Text("(in WindowA)");
+                Funcs::PrintRoutingAndTestShortcut(key_chord, 0, input_flags);
+
+                // 2: InputText also polling for CTRL+A: it always uses _RouteFocused internally (gets priority when active)
+                char str[16] = "Press CTRL+A";
+                ImGui::Spacing();
+                ImGui::InputText("InputTextB", str, IM_ARRAYSIZE(str), ImGuiInputTextFlags_ReadOnly);
+                ImGuiID item_id = ImGui::GetItemID();
+                ImGui::SameLine(); HelpMarker("Internal widgets always use _RouteFocused");
+                Funcs::PrintRoutingAndTestShortcut(key_chord, item_id, input_flags);
+
+                // 3: Dummy child is not claiming the route: focusing them shouldn't steal route away from WindowA
+                ImGui::BeginChild("ChildD", ImVec2(-FLT_MIN, line_height * 4), true);
+                ImGui::Text("(in ChildD)");
+                ImGui::Text("WindowFocused: %d", ImGui::IsWindowFocused());
+                ImGui::EndChild();
+
+                // 4: Child window polling for CTRL+A. It is deeper than WindowA and gets priority when focused.
+                ImGui::BeginChild("ChildE", ImVec2(-FLT_MIN, line_height * 4), true);
+                ImGui::Text("(in ChildE)");
+                Funcs::PrintRoutingAndTestShortcut(key_chord, 0, input_flags);
+                ImGui::EndChild();
+
+                // 5: In a popup
+                if (ImGui::Button("Open Popup"))
+                    ImGui::OpenPopup("PopupF");
+                if (ImGui::BeginPopup("PopupF"))
+                {
+                    ImGui::Text("(in PopupF)");
+                    Funcs::PrintRoutingAndTestShortcut(key_chord, 0, input_flags);
+                    ImGui::InputText("InputTextG", str, IM_ARRAYSIZE(str), ImGuiInputTextFlags_ReadOnly);
+                    Funcs::PrintRoutingAndTestShortcut(key_chord, ImGui::GetItemID(), input_flags);
+                    ImGui::EndPopup();
+                }
+                ImGui::EndChild();
+
+                ImGui::TreePop();
+            }
+
             ImGui::TreePop();
         }
 
